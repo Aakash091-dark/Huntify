@@ -115,14 +115,15 @@ Examples:
     
     try:
         # Run automated job hunt
-        result = run_fully_automated_hunt(
+        import asyncio
+        result = asyncio.run(run_fully_automated_hunt(
             base_resume_path=args.resume,
             sources=sources,
             min_match_score=args.min_score,
             max_applications=args.max_jobs,
             headless=args.headless,
             auto_submit=not args.no_auto_submit,
-        )
+        ))
         
         # Display results
         logger.info("\n" + "="*80)

@@ -26,6 +26,13 @@ type DashboardPayload = {
   approval_queue: Application[];
 };
 
+type AutoApplySettings = {
+  min_score: number;
+  max_jobs: number;
+  headless: boolean;
+  sources: string;
+};
+
 const emptySummary: Summary = {
   jobs_discovered: 0,
   jobs_matching: 0,
@@ -48,9 +55,17 @@ export default function App() {
   const [queue, setQueue] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
+  const [autoApplying, setAutoApplying] = useState(false);
   const [busyApplicationId, setBusyApplicationId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
+  const [autoApplySettings, setAutoApplySettings] = useState<AutoApplySettings>({
+    min_score: 0.65,
+    max_jobs: 10,
+    headless: false,
+    sources: '',
+  });
 
   const loadDashboard = useCallback(async () => {
     const payload = await requestJson<DashboardPayload>('/dashboard/summary');
@@ -101,6 +116,46 @@ export default function App() {
     }
   };
 
+  const startAutoApply = async () => {
+    setAutoApplying(true);
+    setError('');
+    setNotice('');
+    setShowSettings(false);
+    try {
+      const params = new URLSearchParams({
+        min_score: autoApplySettings.min_score.toString(),
+        max_jobs: autoApplySettings.max_jobs.toString(),
+        headless: autoApplySettings.headless.toString(),
+      });
+      if (autoApplySettings.sources) {
+        params.append('sources', autoApplySettings.sources);
+      }
+
+      const result = await requestJson<{
+        status: string;
+        message: string;
+        jobs_evaluated: number;
+        jobs_matched: number;
+        applications_submitted: number;
+        applications: Array<{
+          status: string;
+          job_title: string;
+          company: string;
+        }>;
+      }>(`/applications/auto-apply?${params.toString()}`, { method: 'POST' });
+
+      const successful = result.applications?.filter(a => a.status === 'submitted').length || 0;
+      setNotice(
+        `Auto-apply completed! Evaluated ${result.jobs_evaluated} jobs, matched ${result.jobs_matched}, successfully submitted ${successful} applications.`
+      );
+      await loadDashboard();
+    } catch (autoError: unknown) {
+      setError(autoError instanceof Error ? autoError.message : 'Auto-apply failed. Check backend logs for details.');
+    } finally {
+      setAutoApplying(false);
+    }
+  };
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -109,15 +164,81 @@ export default function App() {
           <h1>Huntify</h1>
           <p className="subtitle">Find relevant roles and prepare applications from your base resume.</p>
         </div>
-        <button className="action-button" onClick={startApplying} disabled={starting}>
-          {starting ? 'Working…' : 'Start applying'}
-        </button>
+        <div className="header-actions">
+          <button className="secondary-button" onClick={startApplying} disabled={starting || autoApplying}>
+            {starting ? 'Preparing…' : 'Prepare Applications'}
+          </button>
+          <button
+            className="action-button auto-apply-button"
+            onClick={() => setShowSettings(!showSettings)}
+            disabled={starting || autoApplying}
+          >
+            {autoApplying ? '🤖 Auto-applying…' : '🤖 Auto-Apply'}
+          </button>
+        </div>
       </header>
 
+      {showSettings && (
+        <section className="card settings-panel">
+          <h3>Auto-Apply Settings</h3>
+          <div className="settings-grid">
+            <div className="setting-item">
+              <label htmlFor="max-jobs">Maximum Jobs</label>
+              <input
+                id="max-jobs"
+                type="number"
+                min="1"
+                max="50"
+                value={autoApplySettings.max_jobs}
+                onChange={(e) => setAutoApplySettings({ ...autoApplySettings, max_jobs: parseInt(e.target.value) || 10 })}
+              />
+            </div>
+            <div className="setting-item">
+              <label htmlFor="min-score">Minimum Match Score</label>
+              <input
+                id="min-score"
+                type="number"
+                min="0"
+                max="1"
+                step="0.05"
+                value={autoApplySettings.min_score}
+                onChange={(e) => setAutoApplySettings({ ...autoApplySettings, min_score: parseFloat(e.target.value) || 0.65 })}
+              />
+            </div>
+            <div className="setting-item">
+              <label htmlFor="sources">Job Sources (comma-separated)</label>
+              <input
+                id="sources"
+                type="text"
+                placeholder="LinkedIn,Naukri,Indeed or leave empty for all"
+                value={autoApplySettings.sources}
+                onChange={(e) => setAutoApplySettings({ ...autoApplySettings, sources: e.target.value })}
+              />
+            </div>
+            <div className="setting-item checkbox-item">
+              <label htmlFor="headless">
+                <input
+                  id="headless"
+                  type="checkbox"
+                  checked={autoApplySettings.headless}
+                  onChange={(e) => setAutoApplySettings({ ...autoApplySettings, headless: e.target.checked })}
+                />
+                Run in headless mode (hidden browser)
+              </label>
+            </div>
+          </div>
+          <div className="settings-actions">
+            <button className="secondary-button" onClick={() => setShowSettings(false)}>Cancel</button>
+            <button className="action-button" onClick={startAutoApply} disabled={autoApplying}>
+              {autoApplying ? 'Running…' : 'Start Auto-Apply'}
+            </button>
+          </div>
+        </section>
+      )}
+
       <p className="workflow-note">
-        Starting the workflow checks configured job sources and prepares tailored applications.
-        Source integrations are still being connected, so only listings with real job URLs enter the queue.
-        Each application stays in your approval queue; nothing is submitted without your approval.
+        <strong>Prepare Applications:</strong> Discovers jobs, matches them to your resume, and prepares tailored applications for manual review.<br />
+        <strong>Auto-Apply:</strong> Fully automated workflow that finds jobs, tailors resumes, and submits applications automatically using browser automation.
       </p>
 
       {error && <div className="notice error" role="alert">{error}</div>}

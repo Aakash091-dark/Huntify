@@ -33,7 +33,7 @@ def _match_score(resume_summary: dict, job: dict) -> float:
     return round(min(score, 0.99), 2)
 
 
-def run_fully_automated_hunt(
+async def run_fully_automated_hunt(
     base_resume_path: str | Path | None = None,
     sources: list[str] | None = None,
     min_match_score: float = 0.60,
@@ -128,21 +128,35 @@ def run_fully_automated_hunt(
         logger.info(f"\n[5/5] Applying to {len(jobs_with_resumes)} jobs automatically...")
         logger.info(f"Browser mode: {'headless' if headless else 'visible'}")
         
-        applier = AutoJobApplier(headless=headless)
-        applications_results = applier.apply_to_jobs_batch(jobs_with_resumes)
-        
-        # Summary
-        successful = sum(1 for r in applications_results if r["status"] == "submitted")
-        partial = sum(1 for r in applications_results if r["status"] == "partially_completed")
-        failed = len(applications_results) - successful - partial
-        
-        logger.info(f"\n{'='*80}")
-        logger.info("APPLICATION SUMMARY")
-        logger.info(f"{'='*80}")
-        logger.info(f"✓ Successfully submitted: {successful}")
-        logger.info(f"⚠ Partially completed: {partial}")
-        logger.info(f"✗ Failed: {failed}")
-        logger.info(f"{'='*80}\n")
+        try:
+            applier = AutoJobApplier(headless=headless)
+            applications_results = await applier.apply_to_jobs_batch(jobs_with_resumes)
+            
+            # Summary
+            successful = sum(1 for r in applications_results if r["status"] == "submitted")
+            partial = sum(1 for r in applications_results if r["status"] == "partially_completed")
+            failed = len(applications_results) - successful - partial
+            
+            logger.info(f"\n{'='*80}")
+            logger.info("APPLICATION SUMMARY")
+            logger.info(f"{'='*80}")
+            logger.info(f"✓ Successfully submitted: {successful}")
+            logger.info(f"⚠ Partially completed: {partial}")
+            logger.info(f"✗ Failed: {failed}")
+            logger.info(f"{'='*80}\n")
+        except Exception as e:
+            logger.error(f"Error during browser automation: {e}", exc_info=True)
+            # Return error but don't fail completely
+            applications_results = [
+                {
+                    "status": "error",
+                    "job_title": item["job"]["title"],
+                    "company": item["job"]["company"],
+                    "error": str(e),
+                    "note": "Browser automation failed - see logs for details"
+                }
+                for item in jobs_with_resumes
+            ]
     else:
         logger.info(f"\n[5/5] Auto-submit disabled - applications prepared for manual review")
         applications_results = [

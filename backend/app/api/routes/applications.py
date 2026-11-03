@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.autonomous.agent import run_autonomous_job_hunt
 from app.autonomous.auto_agent import run_fully_automated_hunt
+from app.application_agent.live_browser_agent import LiveBrowserAgent
 from app.services.application_tracker import (
     create_application,
     get_application_status,
@@ -78,39 +79,90 @@ async def auto_apply_to_jobs(
     sources: str | None = Query(default=None, description="Comma-separated list of sources"),
 ) -> dict[str, Any]:
     """
-    Fully automated job application workflow:
-    1. Scrapes jobs from web based on your resume
-    2. Matches and filters relevant positions
-    3. Tailors resumes for each job
-    4. Automatically applies via browser automation
+    Fully automated job application workflow - runs as background subprocess
     """
-    source_list = sources.split(",") if sources else None
+    import subprocess
+    import json
+    from pathlib import Path
     
-    result = run_fully_automated_hunt(
+    backend_dir = Path(__file__).parent.parent.parent.parent
+    script_path = backend_dir / "run_auto_apply.py"
+    
+    # Build command
+    cmd = [
+        "python",
+        str(script_path),
+        "--max-jobs", str(max_jobs),
+        "--min-score", str(min_score),
+    ]
+    
+    if headless:
+        cmd.append("--headless")
+    
+    if sources:
+        cmd.extend(["--sources", sources])
+    
+    try:
+        # Run in background
+        process = subprocess.Popen(
+            cmd,
+            cwd=str(backend_dir),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # Don't wait for completion - let it run in background
+        return {
+            "status": "started",
+            "message": f"Auto-apply process started in background. Processing up to {max_jobs} jobs with min score {min_score}. Check logs at backend/huntify_automation.log",
+            "settings": {
+                "max_jobs": max_jobs,
+                "min_score": min_score,
+                "headless": headless,
+                "sources": sources or "all",
+            },
+            "log_file": "backend/huntify_automation.log"
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to start auto-apply process: {str(e)}",
+            "error": str(e)
+        }
+
+
+
+@router.post("/live-browser-apply")
+async def live_browser_apply(
+    search_query: str = Query(default="Python Backend Developer", description="Job search query"),
+    sources: str = Query(default="Naukri,Indeed", description="Comma-separated list of sources"),
+    max_per_source: int = Query(default=5, ge=1, le=20, description="Max applications per source"),
+    headless: bool = Query(default=False, description="Run browser in headless mode"),
+) -> dict[str, Any]:
+    """
+    Live browser application:
+    1. Opens job board in browser
+    2. Searches for jobs using your query
+    3. Clicks on each job
+    4. Applies in real-time
+    """
+    source_list = [s.strip() for s in sources.split(",")]
+    
+    agent = LiveBrowserAgent(headless=headless)
+    result = agent.run_live_application_session(
+        search_query=search_query,
         sources=source_list,
-        min_match_score=min_score,
-        max_applications=max_jobs,
-        headless=headless,
-        auto_submit=True,
+        max_per_source=max_per_source
     )
-    
-    # Record applications in tracker
-    for app in result.get("applications", []):
-        if app.get("status") in {"submitted", "partially_completed"}:
-            try:
-                create_application(
-                    {"title": app["job_title"], "company": app["company"], "url": app.get("url", "")},
-                    app.get("match_score", 0.0),
-                    {"file_path": app.get("resume_path", "")},
-                )
-            except Exception:
-                pass
     
     return {
         "status": result["status"],
-        "message": result["message"],
-        "jobs_evaluated": result.get("jobs_evaluated", 0),
-        "jobs_matched": result.get("jobs_matched", 0),
-        "applications_submitted": result.get("applications_submitted", 0),
-        "applications": result.get("applications", []),
+        "message": f"Live browser session completed. Attempted {result['total_attempted']}, Successful {result['total_successful']}",
+        "search_query": result["search_query"],
+        "sources": result["sources_processed"],
+        "total_attempted": result["total_attempted"],
+        "total_successful": result["total_successful"],
+        "details": result["details_by_source"],
     }

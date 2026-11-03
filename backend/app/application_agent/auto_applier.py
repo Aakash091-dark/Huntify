@@ -1,10 +1,13 @@
 """Fully automated job application system with browser automation."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from pathlib import Path
 from typing import Any
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
@@ -31,7 +34,7 @@ class AutoJobApplier:
             "github": "https://github.com/aakash-sehrawat",
         }
 
-    def apply_to_job(self, job: dict[str, Any], resume_path: str | Path) -> dict[str, Any]:
+    def _apply_to_job_sync(self, job: dict[str, Any], resume_path: str | Path) -> dict[str, Any]:
         """
         Automatically apply to a single job.
         
@@ -245,7 +248,13 @@ class AutoJobApplier:
 
         return False
 
-    def apply_to_jobs_batch(self, jobs_with_resumes: list[dict]) -> list[dict]:
+    async def apply_to_job(self, job: dict[str, Any], resume_path: str | Path) -> dict[str, Any]:
+        """Run sync browser automation in thread pool to avoid event loop issues."""
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as pool:
+            return await loop.run_in_executor(pool, self._apply_to_job_sync, job, resume_path)
+    
+    async def apply_to_jobs_batch(self, jobs_with_resumes: list[dict]) -> list[dict]:
         """
         Apply to multiple jobs in sequence.
         
@@ -266,13 +275,13 @@ class AutoJobApplier:
             logger.info(f"Job: {job.get('title')} at {job.get('company')}")
             logger.info(f"{'='*60}\n")
             
-            result = self.apply_to_job(job, resume_path)
+            result = await self.apply_to_job(job, resume_path)
             results.append(result)
             
             # Add delay between applications
             if i < len(jobs_with_resumes):
                 delay = 5  # 5 seconds between applications
                 logger.info(f"Waiting {delay} seconds before next application...\n")
-                time.sleep(delay)
+                await asyncio.sleep(delay)
         
         return results

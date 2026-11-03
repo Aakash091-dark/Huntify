@@ -1,5 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import sys
+import asyncio
+
+# Fix for Windows + Playwright async
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from app.api.routes.applications import router as applications_router
 from app.api.routes.dashboard import router as dashboard_router

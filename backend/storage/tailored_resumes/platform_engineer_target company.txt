@@ -1,0 +1,25 @@
+Role: Platform Engineer
+
+Company: Target Company
+
+Summary:
+
+Python and AI developer with 4.5 years of experience building scalable backend systems, API platforms, and LLM-powered workflows for production environments. Expertise includes FastAPI, PostgreSQL, Redis, Celery, Docker, Kubernetes, and AI integrations such as LLM orchestration, RAG, and agentic tooling.
+
+Keyword Alignment:
+
+fastapi, postgresql, python
+
+Core Skills:
+
+Python, FastAPI, PostgreSQL, AI, LLM, RAG, Redis, Docker, fastapi, postgresql, python, engineer
+
+Relevant Experience:
+
+Designed and maintained multi-tenant SaaS backend services with FastAPI, PostgreSQL, Redis, and Celery.
+
+Integrated Anthropic and other AI APIs to build workflow automation, tool-using agents, and retrieval-based experiences.
+
+Deployed production-ready applications with Docker and Kubernetes, improving scalability, observability, and reliability.
+
+Partnered with product and growth teams to identify workflows that could be automated, increasing operational efficiency.
